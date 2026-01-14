@@ -18,8 +18,8 @@ async function readBoard(page) {
 
 (async () => {
   const browser = await chromium.launch({
-    headless: false, // shows the browser window
-    slowMo: 50,      // optional: slows actions so you can see them
+    headless: false,
+    slowMo: 50,
   });
 
   const page = await browser.newPage();
