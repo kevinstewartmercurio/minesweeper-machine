@@ -1,7 +1,14 @@
 import { chromium } from "playwright";
 
+type Board = {
+  id: string;
+  isOpen: boolean;
+  number: number | null;
+  isFlagged: boolean;
+}[]
+
 async function readBoard(page) {
-  return await page.$$eval("div.square", (squares) => {
+  return await page.$$eval('div.square:not([style*="display: none"])', (squares) => {
     return squares.map((sq) => {
       const classes = sq.className.split(" ");
       return {
@@ -13,6 +20,21 @@ async function readBoard(page) {
         isFlagged: classes.includes("bombflagged")
       };
     })
+  })
+}
+
+function applyFlags(board: Board) {
+  board.forEach((sq) => {
+    if (sq.isOpen && sq.number) {
+      const [x, y] = sq.id.split("_").map(nStr => parseInt(nStr))
+      let count = 0;
+
+      if (x - 1 && y - 1 && !board[(x - 2) * 30 + y - 2].isOpen && !board[(x - 2) * 30 + y - 2].isFlagged) {
+        count++;
+      }
+
+      console.log(x, y, count);
+    }
   })
 }
 
@@ -35,9 +57,5 @@ async function readBoard(page) {
   await page.click("#\\38_15");
 
   const board = await readBoard(page);
-  board.forEach((sq) => {
-    if (sq.isOpen) {
-      console.log(sq)
-    }
-  })
+  applyFlags(board);
 })();
