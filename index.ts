@@ -129,10 +129,14 @@ async function openSquares(board: Board, page) {
   return safeIds.size;
 }
 
+function countFlags(board) {
+  return board.reduce((acc, sq) => acc + (sq.isFlagged ? 1 : 0), 0);
+}
+
 (async () => {
   const browser = await chromium.launch({
     headless: headless,
-    slowMo: 200,
+    slowMo: 10,
     // args: ["--start-maximized"],
   });
 
@@ -150,26 +154,36 @@ async function openSquares(board: Board, page) {
   await page.click("#nightMode");
   await page.click("#display-link");
 
-  await page.click("#\\38_15");
+  // await page.click("#\\38_15");
 
   let board: Board;
   let flagsApplied: number;
   let squaresOpened: number;
+  let victory = false;
 
-  do {
-    board = await readBoard(page);
+  while (!victory) {
+    console.log("beginning new game");
+    await page.click("#\\38_15");
+    await page.click("#face");
 
-    flagsApplied = await applyFlags(board, page);
-    console.log(flagsApplied, "flags applied");
-
-    squaresOpened = 0;
     do {
       board = await readBoard(page);
-      squaresOpened = await openSquares(board, page);
 
-      console.log(squaresOpened, "squares opened");
-    } while (squaresOpened !== 0);
-  } while (flagsApplied !== 0 || squaresOpened !== 0);
+      flagsApplied = await applyFlags(board, page);
+      console.log(flagsApplied, "flags applied");
 
-  console.log("halting");
+      squaresOpened = 0;
+      do {
+        board = await readBoard(page);
+        squaresOpened = await openSquares(board, page);
+
+        console.log(squaresOpened, "squares opened");
+      } while (squaresOpened !== 0);
+    } while (flagsApplied !== 0 || squaresOpened !== 0);
+
+    board = await readBoard(page);
+    victory = countFlags(board) === 99;
+  }
+
+  console.log("victory!");
 })();
