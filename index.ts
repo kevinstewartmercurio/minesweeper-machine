@@ -63,7 +63,13 @@ async function applyFlags(board: Board, page) {
 
       if (sq.number === count) {
         neighborIds.forEach((id) => {
-          unsafeIds.add(id);
+          const [neighborX, neighborY] = id
+            .split("_")
+            .map((nStr) => parseInt(nStr));
+
+          if (!board[(neighborX - 1) * 30 + neighborY - 1].isFlagged) {
+            unsafeIds.add(id);
+          }
         });
       }
     }
@@ -127,11 +133,11 @@ async function openSquares(board: Board, page) {
   const browser = await chromium.launch({
     headless: headless,
     slowMo: 200,
-    args: ["--start-maximized"],
+    // args: ["--start-maximized"],
   });
 
   const context = await browser.newContext({
-    viewport: null,
+    viewport: { width: 1024, height: 672 },
   });
 
   const page = await context.newPage();
@@ -140,26 +146,11 @@ async function openSquares(board: Board, page) {
   });
 
   await page.click("#display-link");
-  await page.click("#zoom200");
+  // await page.click("#zoom150");
   await page.click("#nightMode");
   await page.click("#display-link");
 
   await page.click("#\\38_15");
-
-  // let board = await readBoard(page);
-  // let flagsApplied: number | null = null;
-  // let squaresOpened: number | null = null;
-  //
-  // while (!(flagsApplied === 0 && squaresOpened === 0)) {
-  //   flagsApplied = await applyFlags(board, page);
-  //   console.log(flagsApplied, "flags applied");
-  //
-  //   while (squaresOpened !== 0) {
-  //     board = await readBoard(page);
-  //     squaresOpened = await openSquares(board, page);
-  //     console.log(squaresOpened, "squares opened");
-  //   }
-  // }
 
   let board: Board;
   let flagsApplied: number;
@@ -172,16 +163,12 @@ async function openSquares(board: Board, page) {
     console.log(flagsApplied, "flags applied");
 
     squaresOpened = 0;
-    let opened;
     do {
       board = await readBoard(page);
-      opened = await openSquares(board, page);
-      squaresOpened += opened;
+      squaresOpened = await openSquares(board, page);
 
-      if (opened > 0) {
-        console.log(opened, "squares opened");
-      }
-    } while (opened !== 0);
+      console.log(squaresOpened, "squares opened");
+    } while (squaresOpened !== 0);
   } while (flagsApplied !== 0 || squaresOpened !== 0);
 
   console.log("halting");
