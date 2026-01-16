@@ -1,15 +1,15 @@
 import { chromium, type Page } from "playwright";
 
 let headless = true;
-let zoom = 100;
+let size = "sm";
 
 for (const arg of Bun.argv) {
   if (arg.startsWith("--headless=")) {
     const val = arg.split("=")[1]?.toLowerCase();
     headless = val === "true";
-  } else if (arg.startsWith("--zoom=")) {
+  } else if (arg.startsWith("--size=")) {
     const val = arg.split("=")[1]?.toLowerCase();
-    zoom = val === "200" ? 200 : val === "150" ? 150 : 100;
+    size = val === "lg" ? "lg" : val === "md" ? "md" : "sm";
   }
 }
 
@@ -270,7 +270,10 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
   });
 
   const context = await browser.newContext({
-    viewport: { width: 672, height: 512 },
+    viewport: {
+      width: size === "lg" ? 1280 : size === "md" ? 1024 : 672,
+      height: size === "lg" ? 896 : size === "md" ? 768 : 512,
+    },
   });
 
   const page = await context.newPage();
@@ -279,7 +282,7 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
   });
 
   await page.click("#display-link");
-  await page.click(`#zoom${zoom}`);
+  await page.click(`#zoom${size === "lg" ? 200 : size === "md" ? 150 : 100}`);
   await page.click("#nightMode");
   await page.click("#display-link");
 
