@@ -5,6 +5,7 @@ let size = "sm";
 let diff = "expert";
 let rows = 16;
 let cols = 30;
+let mines = 99;
 
 for (const arg of Bun.argv) {
   if (arg.startsWith("--headless=")) {
@@ -20,11 +21,13 @@ for (const arg of Bun.argv) {
         diff = "beginner";
         rows = 9;
         cols = 9;
+        mines = 10;
         break;
       case "intermediate":
         diff = "intermediate";
         rows = 16;
         cols = 16;
+        mines = 40;
         break;
       default:
         break;
@@ -283,6 +286,19 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
   return [unsafeIds.size, safeIds.size];
 }
 
+async function sweep(board: Board, page: Page) {
+  // assumes all mines have been flagged
+  for (const sqObj of board) {
+    if (!sqObj.isOpen && !sqObj.isFlagged) {
+      const sq = page.locator(`div.square[id="${sqObj.id}"]`);
+
+      if ((await sq.count()) > 0) {
+        await sq.click();
+      }
+    }
+  }
+}
+
 (async () => {
   const browser = await chromium.launch({
     headless: headless,
@@ -344,13 +360,13 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
       continue;
     }
 
-    // if (countFlags(board) < 30) {
-    //   console.log("beginning new game");
-    //   await page.click("#face");
-    //   await page.click(startMove);
-    // }
-
-    console.log("No moves left (P1 or P2). Halting.");
+    if (countFlags(board) === mines) {
+      board = await readBoard(page);
+      await sweep(board, page);
+      console.log("victory!");
+    } else {
+      console.log("No moves left (P1 or P2). Halting.");
+    }
     break;
   }
 })();
