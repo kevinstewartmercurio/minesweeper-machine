@@ -89,6 +89,13 @@ function getSubarraysOfSize(arr: string[], size: number): string[][] {
   return result;
 }
 
+function intersection(arrs: string[][]) {
+  const retArr = arrs.reduce((acc, cur) => {
+    return acc.filter((s) => cur.includes(s));
+  });
+
+  return retArr;
+}
 async function phase1(board: Board, page: Page) {
   const safeIds = new Set();
   const unsafeIds = new Set();
@@ -263,6 +270,12 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
               safeIds.add(id);
             }
           });
+        } else if (
+          goodPlacements.length > 1 &&
+          goodPlacements[0] &&
+          goodPlacements[0].length > 1
+        ) {
+          intersection(goodPlacements).forEach((id) => unsafeIds.add(id));
         }
       }
     }
