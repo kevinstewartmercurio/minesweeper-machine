@@ -300,6 +300,126 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
   return [unsafeIds.size, safeIds.size];
 }
 
+async function phase3(board: Board, page: Page) {
+  let preppedGuessPlacements: string[][] | null = null;
+
+  for (const sq of board) {
+    if (sq.isOpen && sq.number) {
+      const [x, y] = sq.id.split("_").map((nStr) => parseInt(nStr)) as [
+        number,
+        number,
+      ];
+
+      const openNumberedNeighborIds: string[] = [];
+      const flaggedNeighborIds: string[] = [];
+      const unflaggedNeighborIds: string[] = [];
+
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          if (!i && !j) {
+            continue;
+          } else if (x + i && x + i <= rows && y + j && y + j <= cols) {
+            const neighbor = board[(x - 1 + i) * cols + y - 1 + j];
+
+            if (neighbor?.isOpen && neighbor?.number) {
+              openNumberedNeighborIds.push(neighbor.id);
+            } else if (neighbor?.isFlagged) {
+              flaggedNeighborIds.push(neighbor.id);
+            } else if (neighbor && !neighbor?.isOpen && !neighbor?.isFlagged) {
+              unflaggedNeighborIds.push(neighbor.id);
+            }
+          }
+        }
+      }
+
+      if (unflaggedNeighborIds.length) {
+        const placements = getSubarraysOfSize(
+          unflaggedNeighborIds,
+          sq.number - flaggedNeighborIds.length,
+        );
+
+        const goodPlacements: string[][] = [];
+        for (const placement of placements) {
+          let curPlacementStatus = true;
+          const placementSet = new Set([...placement]);
+
+          for (const neighborId of openNumberedNeighborIds) {
+            const [neighborX, neighborY] = neighborId
+              .split("_")
+              .map((nStr) => parseInt(nStr)) as [number, number];
+
+            let flaggedNeighborsCount = 0;
+            let unopenedUnflaggedNeighborsCount = 0;
+
+            for (let i = -1; i <= 1; i++) {
+              for (let j = -1; j <= 1; j++) {
+                if (
+                  neighborX + i &&
+                  neighborX + i <= rows &&
+                  neighborY + j &&
+                  neighborY + j <= cols
+                ) {
+                  if (
+                    board[(neighborX - 1 + i) * cols + neighborY - 1 + j]
+                      ?.isFlagged ||
+                    placementSet.has(`${neighborX + i}_${neighborY + j}`)
+                  ) {
+                    flaggedNeighborsCount++;
+                  }
+                  if (
+                    !board[(neighborX - 1 + i) * cols + neighborY - 1 + j]
+                      ?.isOpen &&
+                    !board[(neighborX - 1 + i) * cols + neighborY - 1 + j]
+                      ?.isFlagged
+                  ) {
+                    unopenedUnflaggedNeighborsCount++;
+                  }
+                }
+              }
+            }
+
+            if (curPlacementStatus && unopenedUnflaggedNeighborsCount) {
+              curPlacementStatus =
+                flaggedNeighborsCount <=
+                (board[(neighborX - 1) * cols + neighborY - 1]
+                  ?.number as number)
+                  ? true
+                  : false;
+            }
+          }
+
+          if (curPlacementStatus) {
+            goodPlacements.push(placement);
+          }
+        }
+
+        if (
+          !preppedGuessPlacements ||
+          goodPlacements.length < preppedGuessPlacements.length ||
+          (goodPlacements.length === preppedGuessPlacements.length &&
+            goodPlacements[0] &&
+            preppedGuessPlacements[0] &&
+            goodPlacements[0].length < preppedGuessPlacements[0].length)
+        ) {
+          preppedGuessPlacements = goodPlacements;
+        }
+      }
+    }
+  }
+
+  if (preppedGuessPlacements && preppedGuessPlacements[0]) {
+    for (const id of preppedGuessPlacements[0]) {
+      const sq = page.locator(`div.square[id="${id}"]:not(.bombflagged)`);
+
+      if ((await sq.count()) > 0) {
+        await sq.click({ button: "right" });
+      }
+
+      console.log("flagging", id);
+    }
+  }
+}
+
 async function sweep(board: Board, page: Page) {
   // assumes all mines have been flagged
   for (const sqObj of board) {
@@ -380,6 +500,9 @@ async function sweep(board: Board, page: Page) {
       console.log("victory!");
     } else {
       console.log("No moves left (P1 or P2). Halting.");
+
+      board = await readBoard(page);
+      await phase3(board, page);
     }
     break;
   }
