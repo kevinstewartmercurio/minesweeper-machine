@@ -2,6 +2,9 @@ import { chromium, type Page } from "playwright";
 
 let headless = true;
 let size = "sm";
+let diff = "expert";
+let rows = 16;
+let cols = 30;
 
 for (const arg of Bun.argv) {
   if (arg.startsWith("--headless=")) {
@@ -10,6 +13,22 @@ for (const arg of Bun.argv) {
   } else if (arg.startsWith("--size=")) {
     const val = arg.split("=")[1]?.toLowerCase();
     size = val === "lg" ? "lg" : val === "md" ? "md" : "sm";
+  } else if (arg.startsWith("--difficulty")) {
+    const val = arg.split("=")[1]?.toLowerCase();
+    switch (val) {
+      case "beginner":
+        diff = "beginner";
+        rows = 9;
+        cols = 9;
+        break;
+      case "intermediate":
+        diff = "intermediate";
+        rows = 16;
+        cols = 16;
+        break;
+      default:
+        break;
+    }
   }
 }
 
@@ -84,16 +103,16 @@ async function phase1(board: Board, page: Page) {
         for (let j = -1; j <= 1; j++) {
           if (
             x + i &&
-            x + i <= 16 &&
+            x + i <= rows &&
             y + j &&
-            y + j <= 30 &&
-            !board[(x - 1 + i) * 30 + y - 1 + j]?.isOpen &&
-            typeof board[(x - 1 + i) * 30 + y - 1 + j]?.id === "string"
+            y + j <= cols &&
+            !board[(x - 1 + i) * cols + y - 1 + j]?.isOpen &&
+            typeof board[(x - 1 + i) * cols + y - 1 + j]?.id === "string"
           ) {
-            (board[(x - 1 + i) * 30 + y - 1 + j]?.isFlagged
+            (board[(x - 1 + i) * cols + y - 1 + j]?.isFlagged
               ? flaggedNeighborIds
               : unflaggedNeighborIds
-            ).push(board[(x - 1 + i) * 30 + y - 1 + j]?.id as string);
+            ).push(board[(x - 1 + i) * cols + y - 1 + j]?.id as string);
           }
         }
       }
@@ -108,7 +127,7 @@ async function phase1(board: Board, page: Page) {
               .split("_")
               .map((nStr) => parseInt(nStr)) as [number, number];
 
-            if (!board[(neighborX - 1) * 30 + neighborY - 1]?.isFlagged) {
+            if (!board[(neighborX - 1) * cols + neighborY - 1]?.isFlagged) {
               unsafeIds.add(id);
             }
           },
@@ -159,8 +178,8 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
         for (let j = -1; j <= 1; j++) {
           if (!i && !j) {
             continue;
-          } else if (x + i && x + i <= 16 && y + j && y + j <= 30) {
-            const neighbor = board[(x - 1 + i) * 30 + y - 1 + j];
+          } else if (x + i && x + i <= rows && y + j && y + j <= cols) {
+            const neighbor = board[(x - 1 + i) * cols + y - 1 + j];
 
             if (neighbor?.isOpen && neighbor?.number) {
               openNumberedNeighborIds.push(neighbor.id);
@@ -196,21 +215,21 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
               for (let j = -1; j <= 1; j++) {
                 if (
                   neighborX + i &&
-                  neighborX + i <= 16 &&
+                  neighborX + i <= rows &&
                   neighborY + j &&
-                  neighborY + j <= 30
+                  neighborY + j <= cols
                 ) {
                   if (
-                    board[(neighborX - 1 + i) * 30 + neighborY - 1 + j]
+                    board[(neighborX - 1 + i) * cols + neighborY - 1 + j]
                       ?.isFlagged ||
                     placementSet.has(`${neighborX + i}_${neighborY + j}`)
                   ) {
                     flaggedNeighborsCount++;
                   }
                   if (
-                    !board[(neighborX - 1 + i) * 30 + neighborY - 1 + j]
+                    !board[(neighborX - 1 + i) * cols + neighborY - 1 + j]
                       ?.isOpen &&
-                    !board[(neighborX - 1 + i) * 30 + neighborY - 1 + j]
+                    !board[(neighborX - 1 + i) * cols + neighborY - 1 + j]
                       ?.isFlagged
                   ) {
                     unopenedUnflaggedNeighborsCount++;
@@ -222,7 +241,8 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
             if (curPlacementStatus && unopenedUnflaggedNeighborsCount) {
               curPlacementStatus =
                 flaggedNeighborsCount <=
-                (board[(neighborX - 1) * 30 + neighborY - 1]?.number as number)
+                (board[(neighborX - 1) * cols + neighborY - 1]
+                  ?.number as number)
                   ? true
                   : false;
             }
@@ -281,6 +301,10 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
     waitUntil: "domcontentloaded",
   });
 
+  await page.click("#options-link");
+  await page.click(`#${diff}`);
+  await page.click("#options-link");
+
   await page.click("#display-link");
   await page.click(`#zoom${size === "lg" ? 200 : size === "md" ? 150 : 100}`);
   await page.click("#nightMode");
@@ -290,7 +314,8 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
 
   console.log("beginning new game");
   await page.click("#face");
-  await page.click("#\\38_15");
+  const startMove = `#\\3${diff === "beginner" ? "4_4" : diff === "intermediate" ? "8_8" : "8_15"}`;
+  await page.click(startMove);
 
   while (true) {
     board = await readBoard(page);
@@ -319,11 +344,11 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
       continue;
     }
 
-    if (countFlags(board) < 30) {
-      console.log("beginning new game");
-      await page.click("#face");
-      await page.click("#\\38_15");
-    }
+    // if (countFlags(board) < 30) {
+    //   console.log("beginning new game");
+    //   await page.click("#face");
+    //   await page.click(startMove);
+    // }
 
     console.log("No moves left (P1 or P2). Halting.");
     break;
