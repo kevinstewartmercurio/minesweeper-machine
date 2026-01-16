@@ -96,6 +96,7 @@ function intersection(arrs: string[][]) {
 
   return retArr;
 }
+
 async function phase1(board: Board, page: Page) {
   const safeIds = new Set();
   const unsafeIds = new Set();
