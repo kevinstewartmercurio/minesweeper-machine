@@ -414,10 +414,12 @@ async function phase3(board: Board, page: Page) {
       if ((await sq.count()) > 0) {
         await sq.click({ button: "right" });
       }
-
-      console.log("flagging", id);
     }
+
+    return preppedGuessPlacements[0].length;
   }
+
+  return 0;
 }
 
 async function sweep(board: Board, page: Page) {
@@ -494,15 +496,20 @@ async function sweep(board: Board, page: Page) {
       continue;
     }
 
+    board = await readBoard(page);
+    const squaresFlaggedP3 = await phase3(board, page);
+
+    if (squaresFlaggedP3) {
+      console.log(squaresFlaggedP3, "squares flagged (P3)");
+      continue;
+    }
+
     if (countFlags(board) === mines) {
       board = await readBoard(page);
       await sweep(board, page);
       console.log("victory!");
     } else {
       console.log("No moves left (P1 or P2). Halting.");
-
-      board = await readBoard(page);
-      await phase3(board, page);
     }
     break;
   }
