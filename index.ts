@@ -1,11 +1,15 @@
 import { chromium, type Page } from "playwright";
 
 let headless = true;
+let zoom = 100;
 
 for (const arg of Bun.argv) {
   if (arg.startsWith("--headless=")) {
     const val = arg.split("=")[1]?.toLowerCase();
     headless = val === "true";
+  } else if (arg.startsWith("--zoom=")) {
+    const val = arg.split("=")[1]?.toLowerCase();
+    zoom = val === "200" ? 200 : val === "150" ? 150 : 100;
   }
 }
 
@@ -29,106 +33,14 @@ async function readBoard(page: Page) {
             ? parseInt(
                 classes
                   .find((c: string) => c.startsWith("open"))
-                  .replace("open", "")
+                  .replace("open", ""),
               )
             : null,
           isFlagged: classes.includes("bombflagged"),
         };
       });
-    }
+    },
   );
-}
-
-async function applyFlags(board: Board, page: Page) {
-  const unsafeIds = new Set();
-
-  board.forEach((sq) => {
-    if (sq.isOpen && sq.number) {
-      const [x, y] = sq.id.split("_").map((nStr) => parseInt(nStr));
-      let count = 0;
-      let neighborIds = [];
-
-      for (let i = -1; i <= 1; i++) {
-        for (let j = -1; j <= 1; j++) {
-          if (
-            x + i &&
-            x + i <= 16 &&
-            y + j &&
-            y + j <= 30 &&
-            !board[(x - 1 + i) * 30 + y - 1 + j]?.isOpen
-          ) {
-            count++;
-            neighborIds.push(board[(x - 1 + i) * 30 + y - 1 + j]?.id);
-          }
-        }
-      }
-
-      if (sq.number === count) {
-        neighborIds.forEach((id) => {
-          const [neighborX, neighborY] = id
-            .split("_")
-            .map((nStr) => parseInt(nStr));
-
-          if (!board[(neighborX - 1) * 30 + neighborY - 1].isFlagged) {
-            unsafeIds.add(id);
-          }
-        });
-      }
-    }
-  });
-
-  for (const id of unsafeIds) {
-    const sq = page.locator(`div.square[id="${id}"]:not(.bombflagged)`);
-
-    if ((await sq.count()) > 0) {
-      await sq.click({ button: "right" });
-    }
-  }
-
-  return unsafeIds.size;
-}
-
-async function openSquaresP1(board: Board, page: Page) {
-  const safeIds = new Set();
-
-  board.forEach((sq) => {
-    if (sq.isOpen && sq.number) {
-      const [x, y] = sq.id.split("_").map((nStr) => parseInt(nStr));
-      const flaggedNeighborIds: string[] = [];
-      const unflaggedNeighborIds: string[] = [];
-
-      for (let i = -1; i <= 1; i++) {
-        for (let j = -1; j <= 1; j++) {
-          if (
-            x + i &&
-            x + i <= 16 &&
-            y + j &&
-            y + j <= 30 &&
-            !board[(x - 1 + i) * 30 + y - 1 + j].isOpen
-          ) {
-            (board[(x - 1 + i) * 30 + y - 1 + j].isFlagged
-              ? flaggedNeighborIds
-              : unflaggedNeighborIds
-            ).push(board[(x - 1 + i) * 30 + y - 1 + j].id);
-          }
-        }
-      }
-
-      if (sq.number === flaggedNeighborIds.length) {
-        unflaggedNeighborIds.forEach((id) => safeIds.add(id));
-      }
-    }
-  });
-
-  for (const id of safeIds) {
-    const sq = page.locator(`div.square[id="${id}"]`);
-
-    if ((await sq.count()) > 0) {
-      await sq.click();
-    }
-  }
-
-  return safeIds.size;
 }
 
 function countFlags(board: Board) {
@@ -155,10 +67,80 @@ function getSubarraysOfSize(arr: string[], size: number): string[][] {
   return result;
 }
 
-async function openSquaresP2(
-  board: Board,
-  page: Page
-): Promise<[number, number]> {
+async function phase1(board: Board, page: Page) {
+  const safeIds = new Set();
+  const unsafeIds = new Set();
+
+  board.forEach((sq) => {
+    if (sq.isOpen && sq.number) {
+      const [x, y] = sq.id.split("_").map((nStr) => parseInt(nStr)) as [
+        number,
+        number,
+      ];
+      const flaggedNeighborIds: string[] = [];
+      const unflaggedNeighborIds: string[] = [];
+
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          if (
+            x + i &&
+            x + i <= 16 &&
+            y + j &&
+            y + j <= 30 &&
+            !board[(x - 1 + i) * 30 + y - 1 + j]?.isOpen &&
+            typeof board[(x - 1 + i) * 30 + y - 1 + j]?.id === "string"
+          ) {
+            (board[(x - 1 + i) * 30 + y - 1 + j]?.isFlagged
+              ? flaggedNeighborIds
+              : unflaggedNeighborIds
+            ).push(board[(x - 1 + i) * 30 + y - 1 + j]?.id as string);
+          }
+        }
+      }
+
+      if (
+        sq.number ===
+        flaggedNeighborIds.length + unflaggedNeighborIds.length
+      ) {
+        [...flaggedNeighborIds, ...unflaggedNeighborIds].forEach(
+          (id: string) => {
+            const [neighborX, neighborY] = id
+              .split("_")
+              .map((nStr) => parseInt(nStr)) as [number, number];
+
+            if (!board[(neighborX - 1) * 30 + neighborY - 1]?.isFlagged) {
+              unsafeIds.add(id);
+            }
+          },
+        );
+      }
+
+      if (sq.number === flaggedNeighborIds.length) {
+        unflaggedNeighborIds.forEach((id) => safeIds.add(id));
+      }
+    }
+  });
+
+  for (const id of unsafeIds) {
+    const sq = page.locator(`div.square[id="${id}"]:not(.bombflagged)`);
+
+    if ((await sq.count()) > 0) {
+      await sq.click({ button: "right" });
+    }
+  }
+
+  for (const id of safeIds) {
+    const sq = page.locator(`div.square[id="${id}"]`);
+
+    if ((await sq.count()) > 0) {
+      await sq.click();
+    }
+  }
+
+  return [unsafeIds.size, safeIds.size];
+}
+
+async function phase2(board: Board, page: Page): Promise<[number, number]> {
   const unsafeIds = new Set();
   const safeIds = new Set();
 
@@ -166,7 +148,7 @@ async function openSquaresP2(
     if (sq.isOpen && sq.number) {
       const [x, y] = sq.id.split("_").map((nStr) => parseInt(nStr)) as [
         number,
-        number
+        number,
       ];
 
       const openNumberedNeighborIds: string[] = [];
@@ -194,7 +176,7 @@ async function openSquaresP2(
       if (unflaggedNeighborIds.length) {
         const placements = getSubarraysOfSize(
           unflaggedNeighborIds,
-          sq.number - flaggedNeighborIds.length
+          sq.number - flaggedNeighborIds.length,
         );
 
         const goodPlacements: string[][] = [];
@@ -240,7 +222,7 @@ async function openSquaresP2(
             if (curPlacementStatus && unopenedUnflaggedNeighborsCount) {
               curPlacementStatus =
                 flaggedNeighborsCount <=
-                board[(neighborX - 1) * 30 + neighborY - 1].number
+                (board[(neighborX - 1) * 30 + neighborY - 1]?.number as number)
                   ? true
                   : false;
             }
@@ -284,12 +266,11 @@ async function openSquaresP2(
 (async () => {
   const browser = await chromium.launch({
     headless: headless,
-    slowMo: 10,
-    // args: ["--start-maximized"],
+    slowMo: 5,
   });
 
   const context = await browser.newContext({
-    viewport: { width: 896, height: 672 },
+    viewport: { width: 672, height: 512 },
   });
 
   const page = await context.newPage();
@@ -298,71 +279,50 @@ async function openSquaresP2(
   });
 
   await page.click("#display-link");
-  //   await page.click("#zoom150");
+  await page.click(`#zoom${zoom}`);
   await page.click("#nightMode");
   await page.click("#display-link");
 
   let board: Board = [];
-  let flagsApplied: number;
-  let squaresOpenedP1: number;
-  let victory = false;
 
-  //   while (!victory) {
   console.log("beginning new game");
   await page.click("#face");
   await page.click("#\\38_15");
 
   while (true) {
-    do {
-      board = await readBoard(page);
-
-      flagsApplied = await applyFlags(board, page);
-      console.log(flagsApplied, "flags applied");
-
-      squaresOpenedP1 = 0;
-      do {
-        board = await readBoard(page);
-        squaresOpenedP1 = await openSquaresP1(board, page);
-
-        console.log(squaresOpenedP1, "squares opened (P1)");
-      } while (squaresOpenedP1 !== 0);
-    } while (flagsApplied !== 0 || squaresOpenedP1 !== 0);
-
     board = await readBoard(page);
-    const [squaresFlaggedP2, squaresOpenedP2] = await openSquaresP2(
-      board,
-      page
-    );
+    const [squaresFlaggedP1, squaresOpenedP1] = await phase1(board, page);
 
-    if (squaresOpenedP2 > 0) {
+    if (squaresFlaggedP1 || squaresOpenedP1) {
       console.log(
-        squaresFlaggedP2,
+        squaresFlaggedP1,
         "squares flagged",
-        squaresOpenedP2,
-        "squares opened (P2)"
+        squaresOpenedP1,
+        "squaresOpened (P1)",
       );
       continue;
     }
 
-    // ----- Nothing left to do -----
+    board = await readBoard(page);
+    const [squaresFlaggedP2, squaresOpenedP2] = await phase2(board, page);
+
+    if (squaresFlaggedP2 || squaresOpenedP2) {
+      console.log(
+        squaresFlaggedP2,
+        "squares flagged",
+        squaresOpenedP2,
+        "squares opened (P2)",
+      );
+      continue;
+    }
+
+    if (countFlags(board) < 30) {
+      console.log("beginning new game");
+      await page.click("#face");
+      await page.click("#\\38_15");
+    }
+
     console.log("No moves left (P1 or P2). Halting.");
     break;
   }
-
-  board = await readBoard(page);
-  victory = countFlags(board) === 99;
-
-  //   if (countFlags(board) > 30) {
-  //     victory = true;
-  //   }
-  //   }
-
-  //   if (countFlags(board) === 99) {
-  //     console.log("victory!");
-  //   } else {
-  //     console.log("time to guess");
-
-  //     const x = await openSquaresP2(board, page);
-  //     console.log(x, "squares opened in p2");
-  //   }
 })();
