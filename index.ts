@@ -88,7 +88,7 @@ async function applyFlags(board: Board, page: Page) {
   return unsafeIds.size;
 }
 
-async function openSquares(board: Board, page: Page) {
+async function openSquaresP1(board: Board, page: Page) {
   const safeIds = new Set();
 
   board.forEach((sq) => {
@@ -155,7 +155,13 @@ function getSubarraysOfSize(arr: string[], size: number): string[][] {
   return result;
 }
 
-async function guess(board: Board, page: Page) {
+async function openSquaresP2(
+  board: Board,
+  page: Page
+): Promise<[number, number]> {
+  const unsafeIds = new Set();
+  const safeIds = new Set();
+
   for (const sq of board) {
     if (sq.isOpen && sq.number) {
       const [x, y] = sq.id.split("_").map((nStr) => parseInt(nStr)) as [
@@ -191,19 +197,10 @@ async function guess(board: Board, page: Page) {
           sq.number - flaggedNeighborIds.length
         );
 
-        /*
-        for each placement, we will treat placement squares as flagged
-        then we will ask the open numbered neighbors if they are happy
-        if any are unhappy then we reject the placement, otherwise we accept
-
-        an open numbered neighbor will be unhappy if the number of their
-            flagged neighbors plus the number of squares in the placement
-            exceeds their number
-        */
-
         const goodPlacements: string[][] = [];
         for (const placement of placements) {
           let curPlacementStatus = true;
+          const placementSet = new Set([...placement]);
 
           for (const neighborId of openNumberedNeighborIds) {
             const [neighborX, neighborY] = neighborId
@@ -223,7 +220,8 @@ async function guess(board: Board, page: Page) {
                 ) {
                   if (
                     board[(neighborX - 1 + i) * 30 + neighborY - 1 + j]
-                      ?.isFlagged
+                      ?.isFlagged ||
+                    placementSet.has(`${neighborX + i}_${neighborY + j}`)
                   ) {
                     flaggedNeighborsCount++;
                   }
@@ -240,17 +238,11 @@ async function guess(board: Board, page: Page) {
             }
 
             if (curPlacementStatus && unopenedUnflaggedNeighborsCount) {
-              // this logic is flawed and assumes all placements squares are in range of neighbor
-              //   curPlacementStatus =
-              //     placement.length + flaggedNeighborsCount <=
-              //     board[(neighborX - 1) * 30 + neighborY - 1].number
-              //       ? true
-              //       : false;
-              //   console.log(
-              //     neighborId,
-              //     placement.length + flaggedNeighborsCount,
-              //     board[(neighborX - 1) * 30 + neighborY - 1].number
-              //   );
+              curPlacementStatus =
+                flaggedNeighborsCount <=
+                board[(neighborX - 1) * 30 + neighborY - 1].number
+                  ? true
+                  : false;
             }
           }
 
@@ -260,23 +252,33 @@ async function guess(board: Board, page: Page) {
         }
 
         if (goodPlacements.length === 1) {
-          console.log("at", sq.id, "choosing placement", goodPlacements);
-          break;
-        } else {
-          console.log(
-            "evaluated",
-            sq.id,
-            "found",
-            goodPlacements.length,
-            "/",
-            placements.length,
-            "good placements",
-            placements
-          );
+          goodPlacements[0]?.forEach((id) => unsafeIds.add(id));
+          unflaggedNeighborIds.forEach((id) => {
+            if (!goodPlacements[0]?.includes(id)) {
+              safeIds.add(id);
+            }
+          });
         }
       }
     }
   }
+
+  for (const id of unsafeIds) {
+    const sq = page.locator(`div.square[id="${id}"]:not(.bombflagged)`);
+
+    if ((await sq.count()) > 0) {
+      await sq.click({ button: "right" });
+    }
+  }
+  for (const id of safeIds) {
+    const sq = page.locator(`div.square[id="${id}"]`);
+
+    if ((await sq.count()) > 0) {
+      await sq.click();
+    }
+  }
+
+  return [unsafeIds.size, safeIds.size];
 }
 
 (async () => {
@@ -287,7 +289,7 @@ async function guess(board: Board, page: Page) {
   });
 
   const context = await browser.newContext({
-    viewport: { width: 1024, height: 672 },
+    viewport: { width: 896, height: 672 },
   });
 
   const page = await context.newPage();
@@ -302,42 +304,65 @@ async function guess(board: Board, page: Page) {
 
   let board: Board = [];
   let flagsApplied: number;
-  let squaresOpened: number;
+  let squaresOpenedP1: number;
   let victory = false;
 
-  while (!victory) {
-    console.log("beginning new game");
-    await page.click("#face");
-    await page.click("#\\38_15");
+  //   while (!victory) {
+  console.log("beginning new game");
+  await page.click("#face");
+  await page.click("#\\38_15");
 
+  while (true) {
     do {
       board = await readBoard(page);
 
       flagsApplied = await applyFlags(board, page);
       console.log(flagsApplied, "flags applied");
 
-      squaresOpened = 0;
+      squaresOpenedP1 = 0;
       do {
         board = await readBoard(page);
-        squaresOpened = await openSquares(board, page);
+        squaresOpenedP1 = await openSquaresP1(board, page);
 
-        console.log(squaresOpened, "squares opened");
-      } while (squaresOpened !== 0);
-    } while (flagsApplied !== 0 || squaresOpened !== 0);
+        console.log(squaresOpenedP1, "squares opened (P1)");
+      } while (squaresOpenedP1 !== 0);
+    } while (flagsApplied !== 0 || squaresOpenedP1 !== 0);
 
     board = await readBoard(page);
-    victory = countFlags(board) === 99;
+    const [squaresFlaggedP2, squaresOpenedP2] = await openSquaresP2(
+      board,
+      page
+    );
 
-    if (countFlags(board) > 30) {
-      victory = true;
+    if (squaresOpenedP2 > 0) {
+      console.log(
+        squaresFlaggedP2,
+        "squares flagged",
+        squaresOpenedP2,
+        "squares opened (P2)"
+      );
+      continue;
     }
+
+    // ----- Nothing left to do -----
+    console.log("No moves left (P1 or P2). Halting.");
+    break;
   }
 
-  if (countFlags(board) === 99) {
-    console.log("victory!");
-  } else {
-    console.log("time to guess");
+  board = await readBoard(page);
+  victory = countFlags(board) === 99;
 
-    await guess(board, page);
-  }
+  //   if (countFlags(board) > 30) {
+  //     victory = true;
+  //   }
+  //   }
+
+  //   if (countFlags(board) === 99) {
+  //     console.log("victory!");
+  //   } else {
+  //     console.log("time to guess");
+
+  //     const x = await openSquaresP2(board, page);
+  //     console.log(x, "squares opened in p2");
+  //   }
 })();
