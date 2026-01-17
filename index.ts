@@ -1,6 +1,7 @@
 import { chromium, type Page } from "playwright";
 
 let headless = true;
+let verbose = false;
 let size = "sm";
 let diff = "expert";
 let rows = 16;
@@ -11,6 +12,8 @@ for (const arg of Bun.argv) {
   if (arg.startsWith("--headless=")) {
     const val = arg.split("=")[1]?.toLowerCase();
     headless = val === "true";
+  } else if (arg === "--verbose") {
+    verbose = true;
   } else if (arg.startsWith("--size=")) {
     const val = arg.split("=")[1]?.toLowerCase();
     size = val === "lg" ? "lg" : val === "md" ? "md" : "sm";
@@ -41,6 +44,12 @@ type Board = {
   number: number | null;
   isFlagged: boolean;
 }[];
+
+function log(...args: unknown[]) {
+  if (verbose) {
+    console.log(...args);
+  }
+}
 
 async function readBoard(page: Page) {
   return await page.$$eval(
@@ -301,7 +310,8 @@ async function phase2(board: Board, page: Page): Promise<[number, number]> {
 }
 
 async function phase3(board: Board, page: Page) {
-  let preppedGuessPlacements: string[][] | null = null;
+  let preppedGuessPlacements: string[] | null = null;
+  let preppedUnflaggedNeighborIds: string[] | null = null;
 
   for (const sq of board) {
     if (sq.isOpen && sq.number) {
@@ -401,14 +411,15 @@ async function phase3(board: Board, page: Page) {
             preppedGuessPlacements[0] &&
             goodPlacements[0].length < preppedGuessPlacements[0].length)
         ) {
-          preppedGuessPlacements = goodPlacements;
+          preppedGuessPlacements = goodPlacements[0] as string[];
+          preppedUnflaggedNeighborIds = unflaggedNeighborIds;
         }
       }
     }
   }
 
-  if (preppedGuessPlacements && preppedGuessPlacements[0]) {
-    for (const id of preppedGuessPlacements[0]) {
+  if (preppedGuessPlacements && preppedUnflaggedNeighborIds) {
+    for (const id of preppedGuessPlacements) {
       const sq = page.locator(`div.square[id="${id}"]:not(.bombflagged)`);
 
       if ((await sq.count()) > 0) {
@@ -416,10 +427,28 @@ async function phase3(board: Board, page: Page) {
       }
     }
 
-    return preppedGuessPlacements[0].length;
+    for (const id of preppedUnflaggedNeighborIds) {
+      if (!preppedGuessPlacements.includes(id)) {
+        const sq = page.locator(`div.square[id="${id}"]`);
+
+        if ((await sq.count()) > 0) {
+          await sq.click();
+        }
+      }
+    }
+
+    const safe = await page
+      .locator("#face")
+      .evaluate((face) => !face.classList.contains("facedead"));
+
+    return [
+      preppedGuessPlacements.length,
+      preppedUnflaggedNeighborIds.length,
+      safe,
+    ];
   }
 
-  return 0;
+  return [0, 0, false];
 }
 
 async function sweep(board: Board, page: Page) {
@@ -464,7 +493,7 @@ async function sweep(board: Board, page: Page) {
 
   let board: Board = [];
 
-  console.log("beginning new game");
+  log("beginning new game");
   await page.click("#face");
   const startMove = `#\\3${diff === "beginner" ? "4_4" : diff === "intermediate" ? "8_8" : "8_15"}`;
   await page.click(startMove);
@@ -474,7 +503,7 @@ async function sweep(board: Board, page: Page) {
     const [squaresFlaggedP1, squaresOpenedP1] = await phase1(board, page);
 
     if (squaresFlaggedP1 || squaresOpenedP1) {
-      console.log(
+      log(
         squaresFlaggedP1,
         "squares flagged",
         squaresOpenedP1,
@@ -487,7 +516,7 @@ async function sweep(board: Board, page: Page) {
     const [squaresFlaggedP2, squaresOpenedP2] = await phase2(board, page);
 
     if (squaresFlaggedP2 || squaresOpenedP2) {
-      console.log(
+      log(
         squaresFlaggedP2,
         "squares flagged",
         squaresOpenedP2,
@@ -497,19 +526,35 @@ async function sweep(board: Board, page: Page) {
     }
 
     board = await readBoard(page);
-    const squaresFlaggedP3 = await phase3(board, page);
+    const [squaresFlaggedP3, squaresOpenedP3, safe] = await phase3(board, page);
 
-    if (squaresFlaggedP3) {
-      console.log(squaresFlaggedP3, "squares flagged (P3)");
-      continue;
+    if (squaresFlaggedP3 || squaresOpenedP3) {
+      log(
+        squaresFlaggedP3,
+        "flagged",
+        squaresOpenedP3,
+        "opened",
+        safe ? "safe" : "dead",
+        "(P3)",
+      );
+
+      if (safe) {
+        continue;
+      } else {
+        log("beginning new game");
+        await page.click("#face");
+        const startMove = `#\\3${diff === "beginner" ? "4_4" : diff === "intermediate" ? "8_8" : "8_15"}`;
+        await page.click(startMove);
+        continue;
+      }
     }
 
     if (countFlags(board) === mines) {
       board = await readBoard(page);
       await sweep(board, page);
-      console.log("victory!");
+      log("victory!");
     } else {
-      console.log("No moves left (P1 or P2). Halting.");
+      log("No moves left. Halting.");
     }
     break;
   }
