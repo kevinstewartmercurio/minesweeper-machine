@@ -494,6 +494,8 @@ async function sweep(board: Board, page: Page) {
   let board: Board = [];
 
   log("beginning new game");
+  let attempts = 1;
+  const startTime = Date.now();
   await page.click("#face");
   const startMove = `#\\3${diff === "beginner" ? "4_4" : diff === "intermediate" ? "8_8" : "8_15"}`;
   await page.click(startMove);
@@ -542,6 +544,7 @@ async function sweep(board: Board, page: Page) {
         continue;
       } else {
         log("beginning new game");
+        attempts++;
         await page.click("#face");
         const startMove = `#\\3${diff === "beginner" ? "4_4" : diff === "intermediate" ? "8_8" : "8_15"}`;
         await page.click(startMove);
@@ -556,6 +559,16 @@ async function sweep(board: Board, page: Page) {
     } else {
       log("No moves left. Halting.");
     }
+
+    const elapsedTime = Date.now() - startTime;
+    console.log(
+      "solved in",
+      attempts,
+      "attempts, after",
+      (elapsedTime / 1000).toFixed(3),
+      "seconds",
+    );
+
     break;
   }
 })();
