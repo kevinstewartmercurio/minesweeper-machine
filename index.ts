@@ -1,6 +1,6 @@
 import { chromium, type Page } from "playwright";
 
-let headless = true;
+let headless = false;
 let verbose = false;
 let size = "sm";
 let diff = "expert";
